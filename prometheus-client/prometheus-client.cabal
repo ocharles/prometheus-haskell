@@ -40,6 +40,7 @@ library
     , bytestring         >=0.9
     , clock
     , containers
+    , deepseq
     , mtl                >=2
     , stm                >=2.3
     , transformers
@@ -85,7 +86,7 @@ benchmark bench
   build-depends:
       base               >=4.7 && <5
     , bytestring
-    , criterion          >=1.1
+    , criterion          >=1.2
     , prometheus-client
     , random
     , utf8-string
