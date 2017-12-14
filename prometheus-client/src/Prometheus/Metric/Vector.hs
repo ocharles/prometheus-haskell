@@ -1,3 +1,5 @@
+{-# language ScopedTypeVariables #-}
+
 module Prometheus.Metric.Vector (
     Vector (..)
 ,   vector
@@ -28,13 +30,14 @@ instance NFData (Vector l m) where
   rnf (MkVector ioref) = seq ioref ()
 
 -- | Creates a new vector of metrics given a label.
-vector :: Label l => l -> Metric m -> Metric (Vector l m)
-vector labels gen = Metric $ do
-    ioref <- checkLabelKeys labels $ IORef.newIORef (gen, Map.empty)
-    return (MkVector ioref, collectVector labels ioref)
+vector :: forall l m. Label l => Metric m -> Metric (Vector l m)
+vector gen =
+  Metric $ do
+    ioref <- checkLabelKeys (map fst (labelMap :: [(T.Text, l -> T.Text)])) $ IORef.newIORef (gen, Map.empty)
+    return (MkVector ioref, collectVector ioref)
 
-checkLabelKeys :: Label l => l -> a -> a
-checkLabelKeys keys r = foldl check r $ map (T.unpack . fst) $ labelPairs keys keys
+checkLabelKeys :: [T.Text] -> a -> a
+checkLabelKeys keys r = foldl check r $ map T.unpack keys
     where
         check _ "instance" = error "The label 'instance' is reserved."
         check _ "job"      = error "The label 'job' is reserved."
@@ -56,8 +59,8 @@ checkLabelKeys keys r = foldl check r $ map (T.unpack . fst) $ labelPairs keys k
 -- TODO(will): This currently makes the assumption that all the types and info
 -- for all sample groups returned by a metric's collect method will be the same.
 -- It is not clear that this will always be a valid assumption.
-collectVector :: Label l => l -> IORef.IORef (VectorState l m) -> IO [SampleGroup]
-collectVector keys ioref = do
+collectVector :: Label l => IORef.IORef (VectorState l m) -> IO [SampleGroup]
+collectVector ioref = do
     (_, metricMap) <- IORef.readIORef ioref
     joinSamples <$> concat <$> mapM collectInner (Map.assocs metricMap)
     where
@@ -68,7 +71,7 @@ collectVector keys ioref = do
             SampleGroup info ty (map (prependLabels labels) samples)
 
         prependLabels l (Sample name labels value) =
-            Sample name (labelPairs keys l ++ labels) value
+            Sample name (toLabelPairs l ++ labels) value
 
         joinSamples []                      = []
         joinSamples s@(SampleGroup i t _:_) = [SampleGroup i t (extract s)]

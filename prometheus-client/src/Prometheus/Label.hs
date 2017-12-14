@@ -1,90 +1,84 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DefaultSignatures #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
-module Prometheus.Label (
-    Label (..)
-,   LabelPairs
-,   Label0
-,   Label1
-,   Label2
-,   Label3
-,   Label4
-,   Label5
-,   Label6
-,   Label7
-,   Label8
-,   Label9
-) where
+module Prometheus.Label
+  ( Label (..)
+  , LabelValue(..)
+  , LabelPairs
+  , toLabelPairs
+  ) where
 
-import Data.Text
+import Control.Arrow (second)
+import Data.Proxy
+import Data.Text (Text, pack)
+import GHC.Generics
+import GHC.TypeLits
 
--- | A list of tuples where the first value is the label and the second is the
--- value of that label.
 type LabelPairs = [(Text, Text)]
+  
+-- | Labels are used to construct multi-dimensional metrics. The 'Label' type
+-- class defines the class of types that can be used to add dimensions to
+-- metrics.
+--
+-- This class specifies a way to (statically) transform a label into the list
+-- of dimensions, and a way to extract a value for each dimension.
+--
+-- To use labels, first define a data type that represents the labels you
+-- wish to use and derive an instance of the 'Label' class. Here we're
+-- using the @DeriveAnyClass@ and @DeriveGeneric@ extensions:
+--
+--     data HttpMeta = HttpMeta { httpMethod :: String , httpStatus :: Int }
+--       deriving (Generic, Label, Ord, Eq)
+--
+-- Now you can construct a vector of metrics:
+--
+--    httpRequests <- register "http_requests" $ vector (counter (Info ...))
+--
+-- To access the underlying counter, we index into this vector by providing labels:
+--
+--    withLabel httpRequests (HttpMeta { httpMethod = "GET", httpStatus = 200 }) incCounter
+class (Eq l, Ord l) => Label l where
+  labelMap :: [(Text, l -> Text)]
+  default labelMap :: (Generic l, GLabel (Rep l)) => [(Text, l -> Text)]
+  labelMap = map (second (. from)) glabelMap
 
--- | Label describes a class of types that can be used to as the label of
--- a vector.
-class Ord l => Label l where
-    labelPairs :: l -> l -> LabelPairs
+class GLabel f where
+  glabelMap :: [(Text, f a -> Text)]
 
-type Label0 = ()
+instance GLabel f => GLabel (M1 D meta f) where
+  glabelMap = map (second (. unM1)) glabelMap
 
-instance Label () where
-    labelPairs () () = []
+instance GLabel f => GLabel (M1 C meta f) where
+  glabelMap = map (second (. unM1)) glabelMap
 
-type Label1 = Text
+instance (GLabel l, GLabel r) => GLabel (l :*: r) where
+  glabelMap = map (second (. getLeft)) glabelMap ++ map (second (. getRight)) glabelMap
+    where getLeft (l :*: _) = l
+          getRight (_ :*: r) = r
 
-instance Label Text where
-    labelPairs key value = [(key, value)]
+instance (KnownSymbol name, LabelValue a) => GLabel (M1 S ('MetaSel ('Just name) su ss ds) (K1 i a)) where
+  glabelMap =
+    [( pack (symbolVal (Proxy :: Proxy name))
+     , \(M1 (K1 a)) -> labelValue a)
+    ]
 
-type Label2 = (Text, Text)
+class LabelValue a where
+  labelValue :: a -> Text
+  default labelValue :: Show a => a -> Text
+  labelValue = pack . show
 
-instance (a ~ Text, b ~ a) => Label (a, b)  where
-    labelPairs (k1, k2) (v1, v2) = [(k1, v1), (k2, v2)]
+instance LabelValue Bool
+instance LabelValue Char
+instance LabelValue Int
+instance LabelValue Float
+instance LabelValue Double
 
-type Label3 = (Text, Text, Text)
+instance LabelValue String where labelValue = pack
+instance LabelValue Text where labelValue = id
 
-instance (a ~ Text, b ~ a, c ~ a) => Label (a, b, c)  where
-    labelPairs (k1, k2, k3) (v1, v2, v3) = [(k1, v1), (k2, v2), (k3, v3)]
-
-type Label4 = (Text, Text, Text, Text)
-
-instance (a ~ Text, b ~ a, c ~ a, d ~ a) => Label (a, b, c, d)  where
-    labelPairs (k1, k2, k3, k4) (v1, v2, v3, v4) =
-            [(k1, v1), (k2, v2), (k3, v3), (k4, v4)]
-
-type Label5 = (Text, Text, Text, Text, Text)
-
-instance (a ~ Text, b ~ a, c ~ a, d ~ a, e ~ a) => Label (a, b, c, d, e)  where
-    labelPairs (k1, k2, k3, k4, k5) (v1, v2, v3, v4, v5) =
-            [(k1, v1), (k2, v2), (k3, v3), (k4, v4), (k5, v5)]
-
-type Label6 = (Text, Text, Text, Text, Text, Text)
-
-instance (a ~ Text, b ~ a, c ~ a, d ~ a, e ~ a, f ~ a) => Label (a, b, c, d, e, f)  where
-    labelPairs (k1, k2, k3, k4, k5, k6) (v1, v2, v3, v4, v5, v6) =
-            [(k1, v1), (k2, v2), (k3, v3), (k4, v4), (k5, v5), (k6, v6)]
-
-type Label7 = (Text, Text, Text, Text, Text, Text, Text)
-
-instance (a ~ Text, b ~ a, c ~ a, d ~ a, e ~ a, f ~ a, g ~ a) => Label (a, b, c, d, e, f, g)  where
-    labelPairs (k1, k2, k3, k4, k5, k6, k7) (v1, v2, v3, v4, v5, v6, v7) =
-            [(k1, v1), (k2, v2), (k3, v3), (k4, v4), (k5, v5), (k6, v6),
-             (k7, v7)]
-
-type Label8 = (Text, Text, Text, Text, Text, Text, Text, Text)
-
-instance (a ~ Text, b ~ a, c ~ a, d ~ a, e ~ a, f ~ a, g ~ a, h ~ a) => Label (a, b, c, d, e, f, g, h) where
-    labelPairs (k1, k2, k3, k4, k5, k6, k7, k8)
-               (v1, v2, v3, v4, v5, v6, v7, v8) =
-            [(k1, v1), (k2, v2), (k3, v3), (k4, v4), (k5, v5), (k6, v6),
-             (k7, v7), (k8, v8)]
-
-type Label9 = (Text, Text, Text, Text, Text, Text, Text, Text,
-               Text)
-
-instance (a ~ Text, b ~ a, c ~ a, d ~ a, e ~ a, f ~ a, g ~ a, h ~ a, i ~ a) => Label (a, b, c, d, e, f, g, h, i) where
-    labelPairs (k1, k2, k3, k4, k5, k6, k7, k8, k9)
-               (v1, v2, v3, v4, v5, v6, v7, v8, v9) =
-            [(k1, v1), (k2, v2), (k3, v3), (k4, v4), (k5, v5), (k6, v6),
-             (k7, v7), (k8, v8), (k9, v9)]
+toLabelPairs :: Label l => l -> LabelPairs
+toLabelPairs l = map (second (\extract -> extract l)) labelMap

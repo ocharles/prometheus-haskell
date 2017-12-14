@@ -162,17 +162,8 @@ module Prometheus (
 -- >>> :}
 
 ,   Label (..)
+,   LabelValue(..)
 ,   LabelPairs
-,   Label0
-,   Label1
-,   Label2
-,   Label3
-,   Label4
-,   Label5
-,   Label6
-,   Label7
-,   Label8
-,   Label9
 
 -- ** Custom metrics
 --

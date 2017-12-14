@@ -1,3 +1,5 @@
+{-# language DeriveGeneric #-}
+{-# language DeriveAnyClass #-}
 {-# language OverloadedStrings #-}
 
 module Prometheus.Export.TextSpec (
@@ -6,9 +8,14 @@ module Prometheus.Export.TextSpec (
 
 import Prometheus
 
+import GHC.Generics
 import Test.Hspec
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.Encoding as LT
+
+data HTTP = HTTP { handler :: String, method :: String }
+  deriving (Generic, Ord, Eq)
+instance Label HTTP
 
 spec :: Spec
 spec = before_ unregisterAll $ after_ unregisterAll $
@@ -71,9 +78,9 @@ spec = before_ unregisterAll $ after_ unregisterAll $
                 ,   "metric_count 3"
                 ])
       it "renders vectors" $ do
-            m <- register $ vector ("handler", "method")
+            m <- register $ vector
                           $ counter (Info "test_counter" "help string")
-            withLabel m ("root", "GET") incCounter 
+            withLabel m (HTTP "root" "GET") incCounter
             result <- exportMetricsAsText
             result `shouldBe` LT.encodeUtf8 (LT.pack $ unlines [
                     "# HELP test_counter help string"
